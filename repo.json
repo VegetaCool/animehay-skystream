@@ -1,0 +1,13 @@
+{
+  "name": "VegetaCool Repo",
+  "author": "VegetaCool",
+  "description": "SkyStream custom plugins",
+  "plugins": [
+    {
+      "id": "animehay",
+      "name": "AnimeHay",
+      "version": 3,
+      "url": "https://raw.githubusercontent.com/VegetaCool/skystream-plugins/main/animehay/plugin.json"
+    }
+  ]
+}
