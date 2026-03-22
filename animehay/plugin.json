@@ -1,12 +1,16 @@
 {
-  "name": "AnimeHay",
-  "id": "animehay",
   "packageName": "com.vegetacool.animehay",
-  "version": 3,
-  "description": "AnimeHay provider for SkyStream",
-  "main": "plugin.js",
-  "script": "plugin.js",
-  "entry": "plugin.js",
-  "site": "https://animehay.ngo",
-  "type": "anime"
+  "name": "AnimeHay",
+  "version": 1,
+  "baseUrl": "https://animehay.ngo",
+  "description": "AnimeHay provider ported from CloudStream to SkyStream",
+  "authors": [
+    "VegetaCool"
+  ],
+  "languages": [
+    "vi"
+  ],
+  "categories": [
+    "Anime"
+  ]
 }
