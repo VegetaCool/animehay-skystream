@@ -259,16 +259,23 @@
         pushStream(streams, ssBase + "?s=SU", "SU");
         pushStream(streams, ssBase + "?s=SG&auto=true", "SG");
         pushStream(streams, ssBase + "?s=HY", "HY");
-      } else {
-        var hyCase = html.match(/case\s*['\"]HY['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
-        if (hyCase && hyCase[1]) {
-          pushStream(streams, hyCase[1], "HY");
-        }
+      }
 
-        var tok = html.match(/tik\s*:\s*['\"]([^'\"]+)['\"]/i);
-        if (tok && tok[1]) {
-          pushStream(streams, tok[1], "TOK", null, true);
-        }
+      var hyCase = html.match(/case\s*['\"]HY['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
+      if (!ssBase && hyCase && hyCase[1]) {
+        pushStream(streams, hyCase[1], "HY");
+      }
+
+      var tok = html.match(/tik\s*:\s*['\"]([^'\"]+)['\"]/i);
+      if (tok && tok[1]) {
+        var tokHeaders = {
+          Referer: manifest.baseUrl + "/",
+          Origin: manifest.baseUrl,
+          "User-Agent": "Mozilla/5.0",
+          Accept: "*/*"
+        };
+        pushStream(streams, tok[1], "TOK", tokHeaders, false);
+        pushStream(streams, tok[1], "TOK (Proxy)", tokHeaders, true);
       }
 
       var seen = {};
