@@ -113,7 +113,14 @@
     var m = text(nameText).match(/(\d+(?:\.\d+)?)/);
     if (!m) return fallbackIndex;
     var n = parseFloat(m[1]);
-    return Number.isFinite(n) ? n : fallbackIndex;
+    if (!Number.isFinite(n)) return fallbackIndex;
+    return Math.max(0, Math.round(n));
+  }
+
+  function toInt(value, fallback) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.round(n);
   }
 
   async function load(url, cb) {
@@ -162,7 +169,7 @@
           name: epName || ("Tap " + (i + 1)),
           url: epUrl,
           season: 1,
-          episode: parseEpisodeNumber(epName, i + 1)
+          episode: toInt(parseEpisodeNumber(epName, i + 1), i + 1)
         }));
       }
 
@@ -219,6 +226,19 @@
       var directM3u8 = html.match(/https?:\/\/[^'\"\s]+\.m3u8[^'\"\s]*/gi) || [];
       for (var i = 0; i < directM3u8.length; i++) {
         pushStream(streams, directM3u8[i], "M3U8");
+      }
+
+      var directMp4 = html.match(/https?:\/\/[^'\"\s]+\.mp4[^'\"\s]*/gi) || [];
+      for (var k = 0; k < directMp4.length; k++) {
+        pushStream(streams, directMp4[k], "MP4");
+      }
+
+      var iframeSrcs = html.match(/<iframe[^>]+src=["']([^"']+)["']/gi) || [];
+      for (var x = 0; x < iframeSrcs.length; x++) {
+        var m = iframeSrcs[x].match(/src=["']([^"']+)["']/i);
+        if (m && m[1]) {
+          pushStream(streams, m[1], "Embed");
+        }
       }
 
       var seen = {};
