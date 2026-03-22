@@ -3,6 +3,6 @@
   "name": "VegetaCool SkyStream Repo",
   "manifestVersion": 1,
   "pluginLists": [
-    "https://raw.githubusercontent.com/VegetaCool/animehay-skystream/main/animehay/plugin.json"
+    "https://raw.githubusercontent.com/VegetaCool/animehay-skystream/main/plugins.json"
   ]
 }
