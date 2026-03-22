@@ -1,11 +1,11 @@
 {
   "name": "VegetaCool Repo",
-  "id": "com.vegetacool.skystream",
-  "packageName": "com.vegetacool.skystream",
+  "id": "com.vegetacool.animehayrepo",
+  "packageName": "com.vegetacool.animehayrepo",
   "repos": [
     {
       "name": "AnimeHay",
-      "plugin": "https://raw.githubusercontent.com/VegetaCool/skystream-plugins/main/animehay/plugin.json"
+      "plugin": "https://raw.githubusercontent.com/VegetaCool/animehay-skystream/main/animehay/plugin.json"
     }
   ]
 }
