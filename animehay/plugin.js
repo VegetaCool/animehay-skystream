@@ -208,12 +208,22 @@
       var html = await fetchHtml(url);
       var streams = [];
 
-      var tok = html.match(/tik\s*:\s*'([^']+)'/i);
+      var ssCase = html.match(/case\s*['\"]SS['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
+      if (ssCase && ssCase[1]) {
+        pushStream(streams, ssCase[1], "SS");
+      }
+
+      var hyCase = html.match(/case\s*['\"]HY['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
+      if (hyCase && hyCase[1]) {
+        pushStream(streams, hyCase[1], "HY");
+      }
+
+      var tok = html.match(/tik\s*:\s*['\"]([^'\"]+)['\"]/i);
       if (tok && tok[1]) {
         pushStream(streams, tok[1], "TOK");
       }
 
-      var ss = html.match(/id=\\"ss_if\\"[^\\n]*?src=\\"([^\\"]+)\\"/i);
+      var ss = html.match(/id=\\"ss_if\\"[^\\n]*?src=\\"([^\\"]+)\\"/i) || html.match(/id=['\"]ss_if['\"][^\n]*?src=['\"]([^'\"]+)['\"]/i);
       if (ss && ss[1]) {
         pushStream(streams, ss[1], "SS (Embed)");
       }
