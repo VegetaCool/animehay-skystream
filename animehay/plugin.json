@@ -1,11 +1,12 @@
 {
-  "id": "animehay",
   "name": "AnimeHay",
+  "id": "animehay",
+  "packageName": "com.vegetacool.animehay",
   "version": 3,
-  "author": "VegetaCool",
   "description": "AnimeHay provider for SkyStream",
+  "main": "plugin.js",
+  "script": "plugin.js",
   "entry": "plugin.js",
-  "icon": "",
   "site": "https://animehay.ngo",
   "type": "anime"
 }
