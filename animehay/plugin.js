@@ -242,6 +242,31 @@
       var html = await fetchHtml(url);
       var streams = [];
 
+      function addRapoFallbackFromSsUrl(ssUrl) {
+        if (!ssUrl) return;
+        var idMatch = ssUrl.match(/\/v\/(\d+)\.html/i);
+        if (!idMatch || !idMatch[1]) return;
+        var sid = idMatch[1];
+        var rapoHeaders = {
+          Referer: manifest.baseUrl + "/",
+          Origin: manifest.baseUrl,
+          "User-Agent": "Mozilla/5.0",
+          Accept: "*/*"
+        };
+
+        var candidates = [
+          "https://vip.rapovideo.xyz/playlist/" + sid + "/master.m3u8",
+          "https://vip.rapovideo.xyz/playlist/v2/" + sid + "/master.m3u8",
+          "https://pt.rapovideo.xyz/playlist/" + sid + "/master.m3u8",
+          "https://pt.rapovideo.xyz/playlist/v2/" + sid + "/master.m3u8"
+        ];
+
+        for (var ci = 0; ci < candidates.length; ci++) {
+          pushStream(streams, candidates[ci], "RAPO", rapoHeaders, false);
+          pushStream(streams, candidates[ci], "RAPO (Proxy)", rapoHeaders, true);
+        }
+      }
+
       var ssBase = null;
       var ssCase = html.match(/case\s*['\"]SS['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
       if (ssCase && ssCase[1]) {
@@ -259,6 +284,7 @@
         pushStream(streams, ssBase + "?s=SU", "SU");
         pushStream(streams, ssBase + "?s=SG&auto=true", "SG");
         pushStream(streams, ssBase + "?s=HY", "HY");
+        addRapoFallbackFromSsUrl(ssBase + ".html");
       }
 
       var hyCase = html.match(/case\s*['\"]HY['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
