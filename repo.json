@@ -2,23 +2,7 @@
   "packageName": "com.vegetacool.repo",
   "name": "VegetaCool SkyStream Repo",
   "manifestVersion": 1,
-  "plugins": [
-    {
-      "packageName": "com.vegetacool.animehay",
-      "name": "AnimeHay",
-      "url": "https://raw.githubusercontent.com/VegetaCool/animehay-skystream/main/animehay/plugin.js",
-      "version": 1,
-      "description": "AnimeHay provider ported from CloudStream to SkyStream",
-      "authors": [
-        "VegetaCool"
-      ],
-      "categories": [
-        "Anime"
-      ],
-      "languages": [
-        "vi"
-      ],
-      "baseUrl": "https://animehay.ngo"
-    }
+  "pluginLists": [
+    "https://raw.githubusercontent.com/VegetaCool/animehay-skystream/main/animehay/plugin.json"
   ]
 }
