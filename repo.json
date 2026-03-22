@@ -6,7 +6,7 @@
     {
       "packageName": "com.vegetacool.animehay",
       "name": "AnimeHay",
-      "url": "https://raw.githubusercontent.com/VegetaCool/animehay-skystream/main/plugin.js",
+      "url": "https://raw.githubusercontent.com/VegetaCool/animehay-skystream/main/animehay/plugin.js",
       "version": 1,
       "description": "AnimeHay provider ported from CloudStream to SkyStream",
       "authors": [
