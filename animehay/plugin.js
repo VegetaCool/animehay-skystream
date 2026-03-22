@@ -1,290 +1,244 @@
 (function () {
-  const manifest = {
-    id: "animehay",
-    name: "AnimeHay",
-    version: 3,
-    baseUrl: "https://animehay.ngo"
-  };
-
-  async function request(url, options = {}) {
-    const res = await fetch(url, {
-      method: options.method || "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Referer": manifest.baseUrl + "/",
-        "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-        ...(options.headers || {})
-      },
-      body: options.body,
-      credentials: "include"
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
-    return await res.text();
+  function ok(cb, data) {
+    cb({ success: true, data: data });
   }
 
-  function parseHTML(html) {
-    return new DOMParser().parseFromString(html, "text/html");
+  function fail(cb, code, err) {
+    cb({ success: false, errorCode: code, message: String(err && err.stack ? err.stack : err) });
   }
 
-  function absolute(url) {
+  function text(v) {
+    return (v || "").toString().replace(/\s+/g, " ").trim();
+  }
+
+  function absUrl(url) {
     if (!url) return "";
-    if (/^https?:\/\//i.test(url)) return url;
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
     if (url.startsWith("//")) return "https:" + url;
-    return manifest.baseUrl + (url.startsWith("/") ? url : "/" + url);
+    return new URL(url, manifest.baseUrl).toString();
   }
 
-  function cleanText(text) {
-    return (text || "").replace(/\s+/g, " ").trim();
+  function toScore(value) {
+    var n = parseFloat(text(value).replace(",", "."));
+    return Number.isFinite(n) ? n : undefined;
   }
 
-  function getText(root, selector) {
-    const el = root.querySelector(selector);
-    return cleanText(el?.textContent || "");
+  function parseStatus(v) {
+    var s = text(v).toLowerCase();
+    if (s.indexOf("hoàn thành") >= 0 || s.indexOf("hoan thanh") >= 0 || s.indexOf("completed") >= 0) return "completed";
+    if (s.indexOf("đang") >= 0 || s.indexOf("dang") >= 0 || s.indexOf("ongoing") >= 0) return "ongoing";
+    return "ongoing";
   }
 
-  function getAttr(root, selector, attr) {
-    const el = root.querySelector(selector);
-    return el?.getAttribute(attr) || "";
+  function inferType(cardText) {
+    var t = text(cardText).toLowerCase();
+    if (t.indexOf("phút") >= 0 || t.indexOf("phut") >= 0) return "movie";
+    return "anime";
   }
 
-  function dedupeByUrl(items) {
-    const seen = new Set();
-    return items.filter((item) => {
-      if (!item?.url || seen.has(item.url)) return false;
-      seen.add(item.url);
-      return true;
+  async function fetchHtml(url) {
+    var res = await http_get(url, { Referer: manifest.baseUrl, Origin: manifest.baseUrl });
+    var status = (res && (res.status || res.statusCode || res.code)) || 0;
+    var body = typeof res === "string" ? res : (res && res.body) || "";
+    if (status >= 400 || !body) {
+      throw new Error("HTTP " + status + " while requesting " + url);
+    }
+    return body;
+  }
+
+  function cardToItem(card) {
+    var a = card.querySelector("a[href*='/thong-tin-phim/']") || card.querySelector("a");
+    if (!a) return null;
+
+    var title = text((card.querySelector("div.name-movie") || {}).textContent) || text(a.getAttribute("title"));
+    var url = absUrl(a.getAttribute("href"));
+    var img = card.querySelector("img");
+    var poster = absUrl(img ? img.getAttribute("src") : "");
+    var score = toScore((card.querySelector("div.score") || {}).textContent);
+    var latest = text((card.querySelector("div.episode-latest") || {}).textContent);
+
+    if (!title || !url) return null;
+
+    return new MultimediaItem({
+      title: title,
+      url: url,
+      posterUrl: poster,
+      type: inferType(latest),
+      score: score
     });
   }
 
-  function dedupeStreams(items) {
-    const seen = new Set();
-    return items.filter((item) => {
-      const key = `${item.server || ""}::${item.type || ""}::${item.url || ""}`;
-      if (!item?.url || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+  async function scrapeListing(url) {
+    var html = await fetchHtml(url);
+    var doc = await parseHtml(html);
+    var cards = doc.querySelectorAll(".movies-list > .movie-item");
+    if (!cards || cards.length === 0) {
+      cards = doc.querySelectorAll(".movie-item");
+    }
+
+    var out = [];
+    for (var i = 0; i < cards.length; i++) {
+      var item = cardToItem(cards[i]);
+      if (item) out.push(item);
+    }
+    return out;
   }
 
-  function parseEpisodeNumber(name) {
-    const m = (name || "").match(/(\d+(\.\d+)?)/);
-    return m ? parseFloat(m[1]) : 999999;
+  async function getHome(cb) {
+    try {
+      var data = {};
+      data["Trending"] = await scrapeListing(absUrl("/phim-moi-cap-nhap/trang-1.html"));
+      data["Shounen"] = await scrapeListing(absUrl("/the-loai/shounen-16/trang-1.html"));
+      data["Hanh Dong"] = await scrapeListing(absUrl("/the-loai/hanh-dong-2/trang-1.html"));
+      data["Hoc Duong"] = await scrapeListing(absUrl("/the-loai/hoc-duong-9/trang-1.html"));
+      data["Xuyen Khong"] = await scrapeListing(absUrl("/the-loai/xuyen-khong-37/trang-1.html"));
+      ok(cb, data);
+    } catch (e) {
+      fail(cb, "HOME_ERROR", e);
+    }
   }
 
-  async function getHome() {
-    const html = await request(`${manifest.baseUrl}/`);
-    const doc = parseHTML(html);
+  async function search(query, cb) {
+    try {
+      var q = encodeURIComponent(text(query || ""));
+      var url = absUrl("/tim-kiem/" + q + ".html");
+      var items = await scrapeListing(url);
+      ok(cb, items);
+    } catch (e) {
+      fail(cb, "SEARCH_ERROR", e);
+    }
+  }
 
-    const anchors = [...doc.querySelectorAll("a[href*='/thong-tin-phim/']")];
-    const items = anchors.map((a) => {
-      const url = absolute(a.getAttribute("href"));
-      const title =
-        cleanText(a.getAttribute("title")) ||
-        cleanText(a.querySelector("img")?.getAttribute("alt")) ||
-        cleanText(a.textContent);
+  function parseEpisodeNumber(nameText, fallbackIndex) {
+    var m = text(nameText).match(/(\d+(?:\.\d+)?)/);
+    if (!m) return fallbackIndex;
+    var n = parseFloat(m[1]);
+    return Number.isFinite(n) ? n : fallbackIndex;
+  }
 
-      const poster =
-        absolute(a.querySelector("img")?.getAttribute("src")) ||
-        absolute(a.querySelector("img")?.getAttribute("data-src"));
+  async function load(url, cb) {
+    try {
+      var html = await fetchHtml(url);
+      var doc = await parseHtml(html);
 
-      if (!url || !title) return null;
-
-      return {
-        title,
-        url,
-        poster,
-        type: "anime"
-      };
-    }).filter(Boolean);
-
-    return [
-      {
-        name: "Anime mới",
-        list: dedupeByUrl(items).slice(0, 30)
+      var title = text((doc.querySelector("h1.heading_movie") || {}).textContent);
+      var poster = absUrl((doc.querySelector(".info-movie .head .first img") || {}).getAttribute && doc.querySelector(".info-movie .head .first img").getAttribute("src"));
+      if (!poster) {
+        poster = absUrl((doc.querySelector("meta[property='og:image']") || {}).getAttribute && doc.querySelector("meta[property='og:image']").getAttribute("content"));
       }
-    ];
+
+      var description = text((doc.querySelector("#ah_wrapper > div.ah_content > div.info-movie > div.body > div.desc.ah-frame-bg > div:nth-child(2)") || {}).textContent);
+      if (!description) {
+        description = text((doc.querySelector("meta[name='description']") || {}).getAttribute && doc.querySelector("meta[name='description']").getAttribute("content"));
+      }
+
+      var status = parseStatus((doc.querySelector(".info-movie .status > div:nth-child(2)") || {}).textContent);
+      var yearText = text((doc.querySelector(".info-movie .update_time > div:nth-child(2)") || {}).textContent);
+      var yearMatch = yearText.match(/(19\d{2}|20\d{2})/);
+      var year = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
+
+      var score = toScore((doc.querySelector(".info-movie .score > div:nth-child(2)") || {}).textContent);
+
+      var tagNodes = doc.querySelectorAll("div.info-movie a[href^='/the-loai/']");
+      var tags = [];
+      for (var t = 0; t < tagNodes.length; t++) {
+        var tag = text(tagNodes[t].textContent);
+        if (tag) tags.push(tag);
+      }
+
+      var eps = doc.querySelectorAll("#ah_wrapper > div.ah_content > div.info-movie > div.body > div.list_episode.ah-frame-bg > div.list-item-episode.scroll-bar > a");
+      if (!eps || eps.length === 0) {
+        eps = doc.querySelectorAll(".info-movie .list-item-episode a");
+      }
+
+      var episodes = [];
+      for (var i = 0; i < eps.length; i++) {
+        var epNode = eps[i];
+        var epUrl = absUrl(epNode.getAttribute("href"));
+        var epName = text(epNode.textContent);
+        if (!epUrl) continue;
+
+        episodes.push(new Episode({
+          name: epName || ("Tap " + (i + 1)),
+          url: epUrl,
+          season: 1,
+          episode: parseEpisodeNumber(epName, i + 1)
+        }));
+      }
+
+      episodes.sort(function (a, b) {
+        return (a.episode || 0) - (b.episode || 0);
+      });
+
+      ok(cb, new MultimediaItem({
+        title: title || "AnimeHay",
+        url: url,
+        posterUrl: poster || "",
+        type: episodes.length > 1 ? "anime" : "movie",
+        description: description,
+        status: status,
+        year: year,
+        score: score,
+        tags: tags,
+        episodes: episodes
+      }));
+    } catch (e) {
+      fail(cb, "LOAD_ERROR", e);
+    }
   }
 
-  async function search(query) {
-    const keyword = encodeURIComponent(query);
-    const urls = [
-      `${manifest.baseUrl}/search/movie?query=${keyword}`,
-      `${manifest.baseUrl}/search/tv?query=${keyword}`,
-      `${manifest.baseUrl}/tim-kiem/?keyword=${keyword}`
-    ];
+  function pushStream(list, url, source, headers) {
+    if (!url) return;
+    list.push(new StreamResult({
+      url: absUrl(url),
+      source: source,
+      headers: headers || { Referer: manifest.baseUrl, Origin: manifest.baseUrl }
+    }));
+  }
 
-    const results = [];
+  async function loadStreams(url, cb) {
+    try {
+      var html = await fetchHtml(url);
+      var streams = [];
 
-    for (const url of urls) {
-      try {
-        const html = await request(url);
-        const doc = parseHTML(html);
+      var tok = html.match(/tik\s*:\s*'([^']+)'/i);
+      if (tok && tok[1]) {
+        pushStream(streams, tok[1], "TOK");
+      }
 
-        const anchors = [...doc.querySelectorAll("a[href*='/thong-tin-phim/']")];
-        for (const a of anchors) {
-          const itemUrl = absolute(a.getAttribute("href"));
-          const title =
-            cleanText(a.getAttribute("title")) ||
-            cleanText(a.querySelector("img")?.getAttribute("alt")) ||
-            cleanText(a.textContent);
+      var ss = html.match(/id=\\"ss_if\\"[^\\n]*?src=\\"([^\\"]+)\\"/i);
+      if (ss && ss[1]) {
+        pushStream(streams, ss[1], "SS (Embed)");
+      }
 
-          const poster =
-            absolute(a.querySelector("img")?.getAttribute("src")) ||
-            absolute(a.querySelector("img")?.getAttribute("data-src"));
+      var hy = html.match(/playhydrax\.com\/\?v=([A-Za-z0-9_-]+)/i);
+      if (hy && hy[1]) {
+        pushStream(streams, "https://playhydrax.com/?v=" + hy[1], "HY (Embed)");
+      }
 
-          if (!itemUrl || !title) continue;
+      var directM3u8 = html.match(/https?:\/\/[^'\"\s]+\.m3u8[^'\"\s]*/gi) || [];
+      for (var i = 0; i < directM3u8.length; i++) {
+        pushStream(streams, directM3u8[i], "M3U8");
+      }
 
-          results.push({
-            title,
-            url: itemUrl,
-            poster,
-            type: "anime"
-          });
+      var seen = {};
+      var unique = [];
+      for (var j = 0; j < streams.length; j++) {
+        var key = streams[j].url;
+        if (!seen[key]) {
+          seen[key] = true;
+          unique.push(streams[j]);
         }
-      } catch (_) {}
-    }
-
-    return dedupeByUrl(results);
-  }
-
-  async function load(url) {
-    const html = await request(url);
-    const doc = parseHTML(html);
-
-    const title = getText(doc, "h1.heading_movie") || getText(doc, "h1");
-    const poster = absolute(getAttr(doc, ".head .first img", "src"));
-    const description = getText(doc, ".desc > div:last-child");
-    const altTitle = getText(doc, ".name_other > div:last-child");
-    const status = getText(doc, ".status > div:last-child");
-    const year = getText(doc, ".update_time > div:last-child");
-    const duration = getText(doc, ".duration > div:last-child");
-
-    const genres = [...doc.querySelectorAll(".list_cate a")]
-      .map((a) => cleanText(a.textContent))
-      .filter(Boolean);
-
-    let episodes = [...doc.querySelectorAll(".list-item-episode a")]
-      .map((a) => {
-        const epUrl = absolute(a.getAttribute("href"));
-        const epName =
-          cleanText(a.getAttribute("title")) ||
-          `Tập ${cleanText(a.textContent)}`;
-
-        if (!epUrl) return null;
-        return { name: epName, url: epUrl };
-      })
-      .filter(Boolean);
-
-    if (!episodes.length) {
-      const watchNow = getAttr(doc, 'a[title="Xem Ngay"]', "href");
-      if (watchNow) {
-        episodes = [{ name: "Tập 1", url: absolute(watchNow) }];
       }
+
+      ok(cb, unique);
+    } catch (e) {
+      fail(cb, "STREAM_ERROR", e);
     }
-
-    episodes.sort((a, b) => parseEpisodeNumber(a.name) - parseEpisodeNumber(b.name));
-
-    return {
-      title,
-      url,
-      poster,
-      description,
-      altTitle,
-      status,
-      year,
-      duration,
-      genres,
-      episodes
-    };
   }
 
-  async function loadStreams(url) {
-    const html = await request(url);
-    const doc = parseHTML(html);
-    const streams = [];
-
-    const tikMatch = html.match(/\$info_play_video\s*=\s*\{[\s\S]*?tik\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]/i);
-    if (tikMatch?.[1]) {
-      streams.push({
-        server: "TOK",
-        url: tikMatch[1],
-        type: "hls",
-        headers: {
-          Referer: manifest.baseUrl + "/"
-        }
-      });
-    }
-
-    const hyMatch = html.match(/case\s*['"]HY['"]:[\s\S]*?src=["'](https:\/\/playhydrax\.com\/\?v=[^"']+)["']/i);
-    if (hyMatch?.[1]) {
-      streams.push({
-        server: "HY",
-        url: hyMatch[1],
-        type: "embed"
-      });
-    }
-
-    const ssMatch = html.match(/case\s*['"]SS['"]:[\s\S]*?src=["'](https:\/\/ssplay\.net\/v\/[^"']+)["']/i);
-    if (ssMatch?.[1]) {
-      streams.push({
-        server: "SS",
-        url: ssMatch[1],
-        type: "embed"
-      });
-    }
-
-    const rawPatterns = [
-      /https:\/\/vip\.rapovideo\.xyz\/playlist\/[^\s"'<>]+\.m3u8[^\s"'<>]*/gi,
-      /https:\/\/ssplay\.net\/v\/[^\s"'<>]+/gi,
-      /https:\/\/playhydrax\.com\/\?v=[^\s"'<>]+/gi
-    ];
-
-    for (const re of rawPatterns) {
-      const matches = [...html.matchAll(re)].map((m) => m[0]);
-      for (const u of matches) {
-        streams.push({
-          server: guessServerName(u),
-          url: u,
-          type: u.includes(".m3u8") ? "hls" : "embed"
-        });
-      }
-    }
-
-    const iframeUrls = [...doc.querySelectorAll("iframe[src]")]
-      .map((el) => absolute(el.getAttribute("src")))
-      .filter(Boolean);
-
-    for (const iframeUrl of iframeUrls) {
-      if (/ssplay\.net|playhydrax\.com/i.test(iframeUrl)) {
-        streams.push({
-          server: guessServerName(iframeUrl),
-          url: iframeUrl,
-          type: "embed"
-        });
-      }
-    }
-
-    const priority = { TOK: 1, SS: 2, HY: 3 };
-    return dedupeStreams(streams).sort((a, b) => {
-      const pa = priority[a.server] || 99;
-      const pb = priority[b.server] || 99;
-      return pa - pb;
-    });
-  }
-
-  function guessServerName(url) {
-    if (/rapovideo/i.test(url) || /\.m3u8/i.test(url)) return "TOK";
-    if (/ssplay\.net/i.test(url)) return "SS";
-    if (/playhydrax\.com/i.test(url)) return "HY";
-    return "Server";
-  }
-
-  return {
-    manifest,
-    getHome,
-    search,
-    load,
-    loadStreams
-  };
+  globalThis.getHome = getHome;
+  globalThis.search = search;
+  globalThis.load = load;
+  globalThis.loadStreams = loadStreams;
 })();
