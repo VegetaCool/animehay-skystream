@@ -194,12 +194,32 @@
     }
   }
 
-  function pushStream(list, url, source, headers) {
+  function pushStream(list, url, source, headers, forceProxy) {
     if (!url) return;
+    var finalUrl = url;
+    if (forceProxy) {
+      try {
+        var raw = absUrl(url);
+        finalUrl = "MAGIC_PROXY_v1" + btoa(raw);
+      } catch (e) {
+        finalUrl = absUrl(url);
+      }
+    } else if (
+      !url.startsWith("MAGIC_PROXY_v1") &&
+      !url.startsWith("MAGIC_PROXY:") &&
+      !url.startsWith("MAGIC_PROXY_v2")
+    ) {
+      finalUrl = absUrl(url);
+    }
+
     list.push(new StreamResult({
-      url: absUrl(url),
+      url: finalUrl,
       source: source,
-      headers: headers || { Referer: manifest.baseUrl, Origin: manifest.baseUrl }
+      headers: headers || {
+        Referer: manifest.baseUrl,
+        Origin: manifest.baseUrl,
+        "User-Agent": "Mozilla/5.0"
+      }
     }));
   }
 
@@ -208,9 +228,18 @@
       var html = await fetchHtml(url);
       var streams = [];
 
+      function addSsMirrors(ssUrl) {
+        if (!ssUrl) return;
+        var base = ssUrl.split("?")[0];
+        pushStream(streams, base + "?s=SU", "SU");
+        pushStream(streams, base + "?s=SG&auto=true", "SG");
+        pushStream(streams, base + "?s=HY", "HY (SS)");
+      }
+
       var ssCase = html.match(/case\s*['\"]SS['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
       if (ssCase && ssCase[1]) {
         pushStream(streams, ssCase[1], "SS");
+        addSsMirrors(absUrl(ssCase[1]));
       }
 
       var hyCase = html.match(/case\s*['\"]HY['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
@@ -220,12 +249,13 @@
 
       var tok = html.match(/tik\s*:\s*['\"]([^'\"]+)['\"]/i);
       if (tok && tok[1]) {
-        pushStream(streams, tok[1], "TOK");
+        pushStream(streams, tok[1], "TOK", null, true);
       }
 
       var ss = html.match(/id=\\"ss_if\\"[^\\n]*?src=\\"([^\\"]+)\\"/i) || html.match(/id=['\"]ss_if['\"][^\n]*?src=['\"]([^'\"]+)['\"]/i);
       if (ss && ss[1]) {
         pushStream(streams, ss[1], "SS (Embed)");
+        addSsMirrors(absUrl(ss[1]));
       }
 
       var hy = html.match(/playhydrax\.com\/\?v=([A-Za-z0-9_-]+)/i);
@@ -235,7 +265,7 @@
 
       var directM3u8 = html.match(/https?:\/\/[^'\"\s]+\.m3u8[^'\"\s]*/gi) || [];
       for (var i = 0; i < directM3u8.length; i++) {
-        pushStream(streams, directM3u8[i], "M3U8");
+        pushStream(streams, directM3u8[i], "M3U8", null, true);
       }
 
       var directMp4 = html.match(/https?:\/\/[^'\"\s]+\.mp4[^'\"\s]*/gi) || [];
