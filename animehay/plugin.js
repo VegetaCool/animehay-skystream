@@ -113,14 +113,7 @@
     var m = text(nameText).match(/(\d+(?:\.\d+)?)/);
     if (!m) return fallbackIndex;
     var n = parseFloat(m[1]);
-    if (!Number.isFinite(n)) return fallbackIndex;
-    return Math.max(0, Math.round(n));
-  }
-
-  function toInt(value, fallback) {
-    var n = Number(value);
-    if (!Number.isFinite(n)) return fallback;
-    return Math.round(n);
+    return Number.isFinite(n) ? n : fallbackIndex;
   }
 
   async function load(url, cb) {
@@ -169,7 +162,7 @@
           name: epName || ("Tap " + (i + 1)),
           url: epUrl,
           season: 1,
-          episode: toInt(parseEpisodeNumber(epName, i + 1), i + 1)
+          episode: parseEpisodeNumber(epName, i + 1)
         }));
       }
 
@@ -194,46 +187,12 @@
     }
   }
 
-  function pushStream(list, url, source, headers, forceProxy) {
+  function pushStream(list, url, source, headers) {
     if (!url) return;
-    var finalUrl = url;
-    if (forceProxy) {
-      try {
-        var raw = absUrl(url);
-        finalUrl = "MAGIC_PROXY_v1" + btoa(raw);
-      } catch (e) {
-        finalUrl = absUrl(url);
-      }
-    } else if (
-      !url.startsWith("MAGIC_PROXY_v1") &&
-      !url.startsWith("MAGIC_PROXY:") &&
-      !url.startsWith("MAGIC_PROXY_v2")
-    ) {
-      finalUrl = absUrl(url);
-    }
-
-    function dynamicHeaders(u) {
-      try {
-        var p = new URL(u);
-        var root = p.protocol + "//" + p.host;
-        return {
-          Referer: root + "/",
-          Origin: root,
-          "User-Agent": "Mozilla/5.0"
-        };
-      } catch (e) {
-        return {
-          Referer: manifest.baseUrl,
-          Origin: manifest.baseUrl,
-          "User-Agent": "Mozilla/5.0"
-        };
-      }
-    }
-
     list.push(new StreamResult({
-      url: finalUrl,
+      url: absUrl(url),
       source: source,
-      headers: headers || dynamicHeaders(finalUrl)
+      headers: headers || { Referer: manifest.baseUrl, Origin: manifest.baseUrl }
     }));
   }
 
@@ -242,66 +201,24 @@
       var html = await fetchHtml(url);
       var streams = [];
 
-      function addRapoFallbackFromSsUrl(ssUrl) {
-        if (!ssUrl) return;
-        var idMatch = ssUrl.match(/\/v\/(\d+)\.html/i);
-        if (!idMatch || !idMatch[1]) return;
-        var sid = idMatch[1];
-        var rapoHeaders = {
-          Referer: manifest.baseUrl + "/",
-          Origin: manifest.baseUrl,
-          "User-Agent": "Mozilla/5.0",
-          Accept: "*/*"
-        };
-
-        var candidates = [
-          "https://vip.rapovideo.xyz/playlist/" + sid + "/master.m3u8",
-          "https://vip.rapovideo.xyz/playlist/v2/" + sid + "/master.m3u8",
-          "https://pt.rapovideo.xyz/playlist/" + sid + "/master.m3u8",
-          "https://pt.rapovideo.xyz/playlist/v2/" + sid + "/master.m3u8"
-        ];
-
-        for (var ci = 0; ci < candidates.length; ci++) {
-          pushStream(streams, candidates[ci], "RAPO", rapoHeaders, false);
-          pushStream(streams, candidates[ci], "RAPO (Proxy)", rapoHeaders, true);
-        }
-      }
-
-      var ssBase = null;
-      var ssCase = html.match(/case\s*['\"]SS['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
-      if (ssCase && ssCase[1]) {
-        ssBase = absUrl(ssCase[1]).split("?")[0];
-      }
-
-      if (!ssBase) {
-        var ss = html.match(/id=\\"ss_if\\"[^\\n]*?src=\\"([^\\"]+)\\"/i) || html.match(/id=['\"]ss_if['\"][^\n]*?src=['\"]([^'\"]+)['\"]/i);
-        if (ss && ss[1]) {
-          ssBase = absUrl(ss[1]).split("?")[0];
-        }
-      }
-
-      if (ssBase) {
-        pushStream(streams, ssBase + "?s=SU", "SU");
-        pushStream(streams, ssBase + "?s=SG&auto=true", "SG");
-        pushStream(streams, ssBase + "?s=HY", "HY");
-        addRapoFallbackFromSsUrl(ssBase + ".html");
-      }
-
-      var hyCase = html.match(/case\s*['\"]HY['\"][\s\S]*?src\s*=\s*['\"]([^'\"]+)['\"]/i);
-      if (!ssBase && hyCase && hyCase[1]) {
-        pushStream(streams, hyCase[1], "HY");
-      }
-
-      var tok = html.match(/tik\s*:\s*['\"]([^'\"]+)['\"]/i);
+      var tok = html.match(/tik\s*:\s*'([^']+)'/i);
       if (tok && tok[1]) {
-        var tokHeaders = {
-          Referer: manifest.baseUrl + "/",
-          Origin: manifest.baseUrl,
-          "User-Agent": "Mozilla/5.0",
-          Accept: "*/*"
-        };
-        pushStream(streams, tok[1], "TOK", tokHeaders, false);
-        pushStream(streams, tok[1], "TOK (Proxy)", tokHeaders, true);
+        pushStream(streams, tok[1], "TOK");
+      }
+
+      var ss = html.match(/id=\\"ss_if\\"[^\\n]*?src=\\"([^\\"]+)\\"/i);
+      if (ss && ss[1]) {
+        pushStream(streams, ss[1], "SS (Embed)");
+      }
+
+      var hy = html.match(/playhydrax\.com\/\?v=([A-Za-z0-9_-]+)/i);
+      if (hy && hy[1]) {
+        pushStream(streams, "https://playhydrax.com/?v=" + hy[1], "HY (Embed)");
+      }
+
+      var directM3u8 = html.match(/https?:\/\/[^'\"\s]+\.m3u8[^'\"\s]*/gi) || [];
+      for (var i = 0; i < directM3u8.length; i++) {
+        pushStream(streams, directM3u8[i], "M3U8");
       }
 
       var seen = {};
