@@ -1,0 +1,19 @@
+[
+  {
+    "packageName": "com.vegetacool.animehay",
+    "name": "AnimeHay",
+    "url": "https://raw.githubusercontent.com/VegetaCool/animehay-skystream/main/animehay.sky",
+    "version": 1,
+    "description": "AnimeHay provider ported from CloudStream to SkyStream",
+    "authors": [
+      "VegetaCool"
+    ],
+    "categories": [
+      "Anime"
+    ],
+    "languages": [
+      "vi"
+    ],
+    "baseUrl": "https://animehay.ngo"
+  }
+]
